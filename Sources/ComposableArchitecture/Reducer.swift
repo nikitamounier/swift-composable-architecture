@@ -845,59 +845,55 @@ public struct Reducer<State, Action, Environment> {
   ///     generally considered a logic error, as a child reducer cannot process a child action
   ///     for unavailable child state.
   /// - Returns: A reducer that works on `GlobalState`, `GlobalAction`, `GlobalEnvironment`.
-  public func forEach<GlobalState, GlobalAction, GlobalEnvironment, ID>(
-    state toLocalState: WritableKeyPath<GlobalState, IdentifiedArray<ID, State>>,
-    action toLocalAction: CasePath<GlobalAction, (ID, Action)>,
-    environment toLocalEnvironment: @escaping (GlobalEnvironment) -> Environment,
-    breakpointOnNil: Bool = true,
-    _ file: StaticString = #file,
-    _ line: UInt = #line
-
-  ) -> Reducer<GlobalState, GlobalAction, GlobalEnvironment> {
-    .init { globalState, globalAction, globalEnvironment in
-      guard let (id, localAction) = toLocalAction.extract(from: globalAction) else { return .none }
-      if globalState[keyPath: toLocalState][id: id] == nil {
-        if breakpointOnNil {
-          breakpoint(
-            """
-            ---
-            Warning: Reducer.forEach@\(file):\(line)
-
-            "\(debugCaseOutput(localAction))" was received by a "forEach" reducer at id \(id) \
-            when its state contained no element at this id. This is generally considered an \
-            application logic error, and can happen for a few reasons:
-
-            * This "forEach" reducer was combined with or run from another reducer that removed \
-            the element at this id when it handled this action. To fix this make sure that this \
-            "forEach" reducer is run before any other reducers that can move or remove elements \
-            from state. This ensures that "forEach" reducers can handle their actions for the \
-            element at the intended id.
-
-            * An in-flight effect emitted this action while state contained no element at this \
-            id. It may be perfectly reasonable to ignore this action, but you also may want to \
-            cancel the effect it originated from when removing an element from the identified \
-            array, especially if it is a long-living effect.
-
-            * This action was sent to the store while its state contained no element at this id. \
-            To fix this make sure that actions for this reducer can only be sent to a view store \
-            when its state contains an element at this id. In SwiftUI applications, use \
-            "ForEachStore".
-            ---
-            """
-          )
+    public func forEach<GlobalState, GlobalAction, GlobalEnvironment>(
+        state toLocalState: WritableKeyPath<GlobalState, IdentifiedArray<State>>,
+        action toLocalAction: CasePath<GlobalAction, (State.ID, Action)>,
+        environment toLocalEnvironment: @escaping (GlobalEnvironment) -> Environment,
+        breakpointOnNil: Bool = true,
+        _ file: StaticString = #file,
+        _ line: UInt = #line
+      ) -> Reducer<GlobalState, GlobalAction, GlobalEnvironment>
+      where State: Identifiable {
+        .init { globalState, globalAction, globalEnvironment in
+          guard let (id, localAction) = toLocalAction.extract(from: globalAction) else { return .none }
+          if globalState[keyPath: toLocalState][id: id] == nil {
+            if breakpointOnNil {
+              breakpoint(
+                """
+                ---
+                Warning: Reducer.forEach@\(file):\(line)
+                "\(debugCaseOutput(localAction))" was received by a "forEach" reducer at id \(id) \
+                when its state contained no element at this id. This is generally considered an \
+                application logic error, and can happen for a few reasons:
+                * This "forEach" reducer was combined with or run from another reducer that removed \
+                the element at this id when it handled this action. To fix this make sure that this \
+                "forEach" reducer is run before any other reducers that can move or remove elements \
+                from state. This ensures that "forEach" reducers can handle their actions for the \
+                element at the intended id.
+                * An in-flight effect emitted this action while state contained no element at this \
+                id. It may be perfectly reasonable to ignore this action, but you also may want to \
+                cancel the effect it originated from when removing an element from the identified \
+                array, especially if it is a long-living effect.
+                * This action was sent to the store while its state contained no element at this id. \
+                To fix this make sure that actions for this reducer can only be sent to a view store \
+                when its state contains an element at this id. In SwiftUI applications, use \
+                "ForEachStore".
+                ---
+                """
+              )
+            }
+            return .none
+          }
+          return
+            self
+            .reducer(
+              &globalState[keyPath: toLocalState][id: id]!,
+              localAction,
+              toLocalEnvironment(globalEnvironment)
+            )
+            .map { toLocalAction.embed((id, $0)) }
         }
-        return .none
       }
-      return
-        self
-        .reducer(
-          &globalState[keyPath: toLocalState][id: id]!,
-          localAction,
-          toLocalEnvironment(globalEnvironment)
-        )
-        .map { toLocalAction.embed((id, $0)) }
-    }
-  }
 
   /// A version of ``pullback(state:action:environment:)`` that transforms a reducer that works on
   /// an element into one that works on a dictionary of element values.
